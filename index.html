@@ -1,0 +1,678 @@
+<html>
+    <head>
+        <title>three.js webgpu - animation retargeting</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+        <link type="text/css" rel="stylesheet" href="src/style.css">
+    </head>
+    <body>
+
+        <div id="info">
+            <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgpu - animation retargeting<br />
+            <a href="https://www.mixamo.com/" target="_blank" rel="noopener">BVH</a> to <a href="https://readyplayer.me/" target="_blank" rel="noopener">readyplayer.me</a>
+        </div>
+
+        <script type="importmap">
+            {
+                "imports": {
+                    "three": "../build/three.module.js",
+                    "three/webgpu": "../build/three.webgpu.js",
+                    "three/tsl": "../build/three.tsl.js",
+                    "three/addons/": "./jsm/"
+                }
+            }
+        </script>
+
+        <script type="module">
+
+            import * as THREE from 'three';
+            import { screenUV, color, vec2, vec4, reflector, positionWorld } from 'three/tsl';
+
+            import Stats from 'three/addons/libs/stats.module.js';
+            
+            import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+            import { TransformControls } from 'three/addons/controls/TransformControls.js';
+            import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+            import { BVHLoader } from 'three/addons/loaders/BVHLoader.js';
+            import {FBXLoader} from 'three/addons/loaders/FBXLoader.js';
+            import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+            import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+
+            const [ sourceModel, targetModel ] = await Promise.all( [
+
+                new Promise( ( resolve, reject ) => {
+
+                    new BVHLoader().load( 'hierarchy.bvh', resolve, undefined, reject );
+
+                } ),
+
+                new Promise( ( resolve, reject ) => {
+
+                    // new GLTFLoader().load( 'mesh.glb', resolve, undefined, reject );
+                    new FBXLoader().load( 'mesh.fbx', resolve, undefined, reject );
+
+                } )
+
+            ] );
+            console.log('sourceModel',sourceModel)
+            console.log('targetModel',targetModel)
+            // Clock
+            const clock = new THREE.Clock();
+
+            const stats = new Stats();
+            document.body.appendChild( stats.dom );
+            
+            // FIX: Rebuild skeleton hierarchy for Mixamo
+        //   targetModel.traverse((child) => {
+        //     if (child.isSkinnedMesh) {
+        //       console.log("🔧 Fixing skeleton hierarchy...");
+              
+        //       // Create bone lookup
+        //       const boneMap = new Map();
+        //       child.skeleton.bones.forEach((bone) => {
+        //         boneMap.set(bone.name, bone);
+        //       });
+              
+        //       // Define Mixamo hierarchy
+        //       const mixamoHierarchy = {
+        //         'mixamorigHips': [
+        //           'mixamorigSpine',
+        //           'mixamorigLeftUpLeg',
+        //           'mixamorigRightUpLeg'
+        //         ],
+        //         'mixamorigSpine': ['mixamorigSpine1'],
+        //         'mixamorigSpine1': ['mixamorigSpine2'],
+        //         'mixamorigSpine2': [
+        //           'mixamorigNeck',
+        //           'mixamorigLeftShoulder',
+        //           'mixamorigRightShoulder'
+        //         ],
+        //         'mixamorigNeck': ['mixamorigHead'],
+        //         'mixamorigLeftShoulder': ['mixamorigLeftArm'],
+        //         'mixamorigRightShoulder': ['mixamorigRightArm'],
+        //         'mixamorigLeftArm': ['mixamorigLeftForeArm'],
+        //         'mixamorigRightArm': ['mixamorigRightForeArm'],
+        //         'mixamorigLeftForeArm': ['mixamorigLeftHand'],
+        //         'mixamorigRightForeArm': ['mixamorigRightHand'],
+        //         'mixamorigLeftUpLeg': ['mixamorigLeftLeg'],
+        //         'mixamorigRightUpLeg': ['mixamorigRightLeg'],
+        //         'mixamorigLeftLeg': ['mixamorigLeftFoot'],
+        //         'mixamorigRightLeg': ['mixamorigRightFoot'],
+        //         'mixamorigLeftFoot': ['mixamorigLeftToeBase'],
+        //         'mixamorigRightFoot': ['mixamorigRightToeBase'],
+        //         // Hand bones
+        //         'mixamorigLeftHand': [
+        //           'mixamorigLeftHandThumb1', 'mixamorigLeftHandIndex1', 
+        //           'mixamorigLeftHandMiddle1', 'mixamorigLeftHandRing1', 'mixamorigLeftHandPinky1'
+        //         ],
+        //         'mixamorigRightHand': [
+        //           'mixamorigRightHandThumb1', 'mixamorigRightHandIndex1',
+        //           'mixamorigRightHandMiddle1', 'mixamorigRightHandRing1', 'mixamorigRightHandPinky1'
+        //         ],
+        //         // Finger chains
+        //         'mixamorigLeftHandThumb1': ['mixamorigLeftHandThumb2'],
+        //         'mixamorigLeftHandThumb2': ['mixamorigLeftHandThumb3'],
+        //         'mixamorigLeftHandIndex1': ['mixamorigLeftHandIndex2'],
+        //         'mixamorigLeftHandIndex2': ['mixamorigLeftHandIndex3'],
+        //         'mixamorigLeftHandMiddle1': ['mixamorigLeftHandMiddle2'],
+        //         'mixamorigLeftHandMiddle2': ['mixamorigLeftHandMiddle3'],
+        //         'mixamorigLeftHandRing1': ['mixamorigLeftHandRing2'],
+        //         'mixamorigLeftHandRing2': ['mixamorigLeftHandRing3'],
+        //         'mixamorigLeftHandPinky1': ['mixamorigLeftHandPinky2'],
+        //         'mixamorigLeftHandPinky2': ['mixamorigLeftHandPinky3'],
+        //         // Right hand fingers
+        //         'mixamorigRightHandThumb1': ['mixamorigRightHandThumb2'],
+        //         'mixamorigRightHandThumb2': ['mixamorigRightHandThumb3'],
+        //         'mixamorigRightHandIndex1': ['mixamorigRightHandIndex2'],
+        //         'mixamorigRightHandIndex2': ['mixamorigRightHandIndex3'],
+        //         'mixamorigRightHandMiddle1': ['mixamorigRightHandMiddle2'],
+        //         'mixamorigRightHandMiddle2': ['mixamorigRightHandMiddle3'],
+        //         'mixamorigRightHandRing1': ['mixamorigRightHandRing2'],
+        //         'mixamorigRightHandRing2': ['mixamorigRightHandRing3'],
+        //         'mixamorigRightHandPinky1': ['mixamorigRightHandPinky2'],
+        //         'mixamorigRightHandPinky2': ['mixamorigRightHandPinky3']
+        //       };
+              
+        //       // Clear existing hierarchy in skeleton
+        //       child.skeleton.bones.forEach((bone) => {
+        //         bone.children = [];
+        //       });
+              
+        //       // Rebuild hierarchy
+        //       Object.entries(mixamoHierarchy).forEach(([parentName, childNames]) => {
+        //         const parentBone = boneMap.get(parentName);
+        //         if (parentBone) {
+        //           childNames.forEach(childName => {
+        //             const childBone = boneMap.get(childName);
+        //             if (childBone) {
+        //               parentBone.add(childBone);
+        //             }
+        //           });
+        //         }
+        //       });
+              
+        //       console.log("✅ Skeleton hierarchy rebuilt");
+              
+        //       // Now try skeleton operations
+        //       child.skeleton.pose();
+        //       child.updateMatrixWorld(true);
+        //       console.log("✅ Applied skeleton pose to fixed hierarchy");
+        //     }
+        //   })
+
+
+            // Scene
+            const scene = new THREE.Scene();
+                scene.background = new THREE.Color( 0xa0a0a0 );
+                scene.fog = new THREE.Fog( 0xa0a0a0, 300, 2000 );
+            // Background Gradient
+
+            // scene.background = new THREE.Color(0x13172b);  // Dark blue background
+
+
+            // Lighting
+            const hemiLight = new THREE.HemisphereLight( 0xffffff, 0x444444, 5 );
+            hemiLight.position.set( 0, 200, 0 );
+            scene.add( hemiLight );
+
+            const dirLight = new THREE.DirectionalLight( 0xffffff, 5 );
+                dirLight.position.set( 0, 200, 100 );
+                dirLight.castShadow = true;
+                dirLight.shadow.camera.top = 180;
+                dirLight.shadow.camera.bottom = - 100;
+                dirLight.shadow.camera.left = - 120;
+                dirLight.shadow.camera.right = 120;
+                scene.add( dirLight );
+
+            const keyLight = new THREE.DirectionalLight( 0xfff9ea, 4 );
+            keyLight.position.set( 300, 500, 300 );
+            scene.add( keyLight );
+
+            // Camera
+            const camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 2000 );
+            camera.position.set( 100, 200, 300 );
+            
+
+            // Add models to scene
+            const skeletonHelper = new THREE.SkeletonHelper( sourceModel.skeleton.bones[ 0 ] );
+            // targetModel.scene.rotation.x = Math.PI;
+
+
+            scene.add( sourceModel.skeleton.bones[ 0 ] );
+            // console.log(sourceModel)
+            scene.add( skeletonHelper );
+            scene.add( targetModel );
+            const targetSkin = targetModel.children[ 1 ];
+            const skeletonHelper2 = new THREE.SkeletonHelper( targetSkin.skeleton.bones[ 0 ] );
+            scene.add( skeletonHelper2 );
+
+            // console.log(JSON.stringify(new THREE.SkeletonHelper( targetModel.scene ).bones[0],null,2))
+
+            // Adjust model positioning
+
+            // Scale adjustments (BVH is typically in meters, GLB might be in different units)
+            sourceModel.skeleton.bones[ 0 ].scale.setScalar( 100 ); // Adjust if necessary
+            
+            // Visual helpers for orientation/axes
+            const worldAxes = new THREE.AxesHelper( 200 );
+            worldAxes.position.set( 0, -30, 0 );
+            scene.add( worldAxes );
+            
+            const modelAxes = new THREE.AxesHelper( 50 );
+            targetModel.add( modelAxes );
+            
+
+            // Retarget Animation
+            const source = getSource( sourceModel );
+            const mixer = retargetModel( source, targetModel );
+            // console.log("BVH Bone Names:");
+            // // sourceModel.skeleton.bones.forEach(bone => console.log(bone.name));
+
+            // console.log("GLB Bone Names:");
+            // targetModel.scene.traverse(obj => {
+            //     if (obj.isBone) console.log(obj.name);
+            // });
+            // console.log(mixer)
+
+            // Renderer
+            let renderer = new THREE.WebGLRenderer( { antialias: true } );
+            renderer.toneMapping = THREE.NeutralToneMapping;
+            renderer.setAnimationLoop( animate );
+            renderer.setPixelRatio( window.devicePixelRatio );
+            renderer.setSize( window.innerWidth, window.innerHeight );
+            document.body.appendChild( renderer.domElement );
+
+            const controls = new OrbitControls( camera, renderer.domElement );
+            controls.minDistance = 300;
+            controls.maxDistance = 1200;
+            controls.target.set( 0, 1, 0 );
+
+            // Transform gizmo to interactively move/rotate/scale the FBX model or bones
+            const transformControls = new TransformControls( camera, renderer.domElement );
+            transformControls.setMode( 'translate' );
+            transformControls.setSpace( 'local' );
+            // Animation play/pause state used by controls and loop
+            let isPlaying = true;
+            transformControls.addEventListener( 'dragging-changed', ( event ) => {
+                controls.enabled = ! event.value;
+                // pause/resume mixers while editing bones to prevent animation from overriding edits
+                const rate = event.value ? 0 : ( isPlaying ? 1 : 0 );
+                if ( typeof source !== 'undefined' && source?.mixer ) source.mixer.timeScale = rate;
+                if ( typeof mixer !== 'undefined' && mixer ) mixer.timeScale = rate;
+            } );
+
+            // Capture transform deltas from gizmo and convert to persistent offsets
+            let dragStartQuat = null;
+            let dragStartPos = null;
+            let dragBone = null;
+            const getTCMode = () => ( typeof transformControls.getMode === 'function' ? transformControls.getMode() : transformControls.mode );
+
+            transformControls.addEventListener( 'mouseDown', () => {
+                if ( selectedBone && transformControls.object === selectedBone ) {
+                    dragBone = selectedBone;
+                    dragStartQuat = dragBone.quaternion.clone();
+                    dragStartPos = dragBone.position.clone();
+                } else {
+                    dragBone = null;
+                    dragStartQuat = null;
+                    dragStartPos = null;
+                }
+            } );
+
+            transformControls.addEventListener( 'mouseUp', () => {
+                if ( ! dragBone ) return;
+                const mode = getTCMode();
+                if ( mode === 'rotate' ) {
+                    const endQuat = dragBone.quaternion.clone();
+                    const deltaQuat = dragStartQuat.clone().invert().multiply( endQuat );
+                    const deltaEuler = new THREE.Euler().setFromQuaternion( deltaQuat, 'XYZ' );
+                    const deg = {
+                        x: THREE.MathUtils.radToDeg( deltaEuler.x ),
+                        y: THREE.MathUtils.radToDeg( deltaEuler.y ),
+                        z: THREE.MathUtils.radToDeg( deltaEuler.z )
+                    };
+                    const rotOffset = boneRotationOffsetDegreesByName[ dragBone.name ];
+                    if ( rotOffset ) {
+                        rotOffset.x += deg.x;
+                        rotOffset.y += deg.y;
+                        rotOffset.z += deg.z;
+                    }
+                } else if ( mode === 'translate' ) {
+                    const endPos = dragBone.position.clone();
+                    const delta = endPos.sub( dragStartPos );
+                    const posOffset = bonePositionOffsetByName[ dragBone.name ];
+                    if ( posOffset ) {
+                        posOffset.x += delta.x;
+                        posOffset.y += delta.y;
+                        posOffset.z += delta.z;
+                    }
+                }
+                // refresh GUI for current selection
+                if ( selectedBone && boneFolder ) {
+                    const rotOffset = boneRotationOffsetDegreesByName[ selectedBone.name ];
+                    if ( rotOffset ) {
+                        boneRotationDegrees.x = rotOffset.x;
+                        boneRotationDegrees.y = rotOffset.y;
+                        boneRotationDegrees.z = rotOffset.z;
+                        boneRotationControllers.forEach( c => c.updateDisplay() );
+                    }
+                }
+                dragBone = null;
+                dragStartQuat = null;
+                dragStartPos = null;
+            } );
+            transformControls.attach( targetModel );
+            scene.add( transformControls );
+
+            // Keyboard shortcuts: W/E/R to switch modes
+            window.addEventListener( 'keydown', ( event ) => {
+                const key = event.key.toLowerCase();
+                if ( key === 'w' ) transformControls.setMode( 'translate' );
+                if ( key === 'e' ) transformControls.setMode( 'rotate' );
+                if ( key === 'r' ) transformControls.setMode( 'scale' );
+            } );
+
+            // Optional: hold Shift to snap translation to 1 unit
+            window.addEventListener( 'keydown', ( event ) => {
+                if ( event.key === 'Shift' ) transformControls.setTranslationSnap( 1 );
+            } );
+            window.addEventListener( 'keyup', ( event ) => {
+                if ( event.key === 'Shift' ) transformControls.setTranslationSnap( null );
+            } );
+
+            // GUI sliders to numerically edit FBX x/y/z position and rotation (deg)
+            const gui = new GUI( { title: 'Controls' } );
+            const positionFolder = gui.addFolder( 'FBX Position' );
+            positionFolder.add( targetModel.position, 'x', -500, 500, 1 ).name( 'x' );
+            positionFolder.add( targetModel.position, 'y', -500, 500, 1 ).name( 'y' );
+            positionFolder.add( targetModel.position, 'z', -500, 500, 1 ).name( 'z' );
+            positionFolder.open();
+
+            // FBX rotation in degrees (backed by radians on the object)
+            const rotationFolder = gui.addFolder( 'FBX Rotation (deg)' );
+            const modelRotationDegrees = {
+                x: THREE.MathUtils.radToDeg( targetModel.rotation.x ),
+                y: THREE.MathUtils.radToDeg( targetModel.rotation.y ),
+                z: THREE.MathUtils.radToDeg( targetModel.rotation.z )
+            };
+            const modelRotControllers = [
+                rotationFolder.add( modelRotationDegrees, 'x', -180, 180, 1 ).name( 'rot x' ).onChange( (v) => targetModel.rotation.x = THREE.MathUtils.degToRad( v ) ),
+                rotationFolder.add( modelRotationDegrees, 'y', -180, 180, 1 ).name( 'rot y' ).onChange( (v) => targetModel.rotation.y = THREE.MathUtils.degToRad( v ) ),
+                rotationFolder.add( modelRotationDegrees, 'z', -180, 180, 1 ).name( 'rot z' ).onChange( (v) => targetModel.rotation.z = THREE.MathUtils.degToRad( v ) )
+            ];
+            rotationFolder.open();
+
+            // Animation controls: play/pause via GUI and Space key
+            const animationFolder = gui.addFolder( 'Animation' );
+            const animState = {
+                playing: true,
+                play() {
+                    isPlaying = true;
+                    this.playing = true;
+                    if ( typeof source !== 'undefined' && source?.mixer ) source.mixer.timeScale = 1;
+                    if ( typeof mixer !== 'undefined' && mixer ) mixer.timeScale = 1;
+                },
+                pause() {
+                    isPlaying = false;
+                    this.playing = false;
+                    if ( typeof source !== 'undefined' && source?.mixer ) source.mixer.timeScale = 0;
+                    if ( typeof mixer !== 'undefined' && mixer ) mixer.timeScale = 0;
+                }
+            };
+            animationFolder.add( animState, 'play' );
+            animationFolder.add( animState, 'pause' );
+            const playingController = animationFolder.add( animState, 'playing' ).name( 'playing' ).onChange( (v) => v ? animState.play() : animState.pause() );
+            window.addEventListener( 'keydown', ( event ) => {
+                if ( event.code === 'Space' ) {
+                    event.preventDefault();
+                    animState.playing ? animState.pause() : animState.play();
+                    playingController.updateDisplay();
+                }
+            } );
+
+            // Bone helpers: clickable markers, selection + per-bone XYZ controls
+            const boneMarkers = [];
+            const boneMarkerMaterial = new THREE.MeshBasicMaterial( { color: 0x00ffff } );
+            const boneMarkerGeometry = new THREE.SphereGeometry( 2, 8, 8 );
+            const bones = targetSkin?.skeleton?.bones || [];
+            // persistent per-bone offsets applied AFTER animation each frame
+            const bonePositionOffsetByName = Object.create( null );
+            const boneRotationOffsetDegreesByName = Object.create( null );
+            bones.forEach( ( bone ) => {
+                bonePositionOffsetByName[ bone.name ] = { x: 0, y: 0, z: 0 };
+                boneRotationOffsetDegreesByName[ bone.name ] = { x: 0, y: 0, z: 0 };
+            } );
+            bones.forEach( ( bone ) => {
+                const marker = new THREE.Mesh( boneMarkerGeometry, boneMarkerMaterial );
+                marker.name = `BoneMarker-${ bone.name }`;
+                // add marker at bone origin so it follows bone transforms
+                bone.add( marker );
+                marker.position.set( 0, 0, 0 );
+                boneMarkers.push( marker );
+            } );
+
+            // Raycasting to pick bones via their markers
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+            let selectedBone = null;
+
+            function selectBone( bone ) {
+                if ( ! bone ) return;
+                selectedBone = bone;
+                transformControls.attach( selectedBone );
+                refreshBoneControllers();
+            }
+
+            function onPointerDown( event ) {
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ( ( event.clientX - rect.left ) / rect.width ) * 2 - 1;
+                mouse.y = - ( ( event.clientY - rect.top ) / rect.height ) * 2 + 1;
+                raycaster.setFromCamera( mouse, camera );
+                const intersects = raycaster.intersectObjects( boneMarkers, true );
+                if ( intersects.length > 0 ) {
+                    const marker = intersects[ 0 ].object;
+                    // marker's parent is the bone
+                    const bone = marker.parent;
+                    selectBone( bone );
+                }
+            }
+            renderer.domElement.addEventListener( 'pointerdown', onPointerDown );
+
+            // GUI: list of bones and per-bone position controls
+            const boneFolder = gui.addFolder( 'Bone Controls' );
+            const boneNames = bones.map( b => b.name );
+            const boneGuiState = { bone: ( boneNames.find( n => /hips/i.test( n ) ) || boneNames[ 0 ] || '' ) };
+            const boneDropdown = boneFolder.add( boneGuiState, 'bone', boneNames ).name( 'Select Bone' );
+
+            let bonePosControllers = [];
+            let boneRotationControllers = [];
+            const boneRotationDegrees = { x: 0, y: 0, z: 0 };
+            function refreshBoneControllers() {
+                // destroy previous controllers
+                bonePosControllers.forEach( c => c.destroy() );
+                bonePosControllers = [];
+                boneRotationControllers.forEach( c => c.destroy() );
+                boneRotationControllers = [];
+                if ( ! selectedBone ) return;
+                // bind to persistent position offsets
+                const posOffset = bonePositionOffsetByName[ selectedBone.name ];
+                bonePosControllers.push( boneFolder.add( posOffset, 'x', -200, 200, 0.1 ).name( 'pos x (offset)' ) );
+                bonePosControllers.push( boneFolder.add( posOffset, 'y', -200, 200, 0.1 ).name( 'pos y (offset)' ) );
+                bonePosControllers.push( boneFolder.add( posOffset, 'z', -200, 200, 0.1 ).name( 'pos z (offset)' ) );
+
+                // bind to persistent rotation offsets (degrees)
+                const rotOffsetDeg = boneRotationOffsetDegreesByName[ selectedBone.name ];
+                boneRotationDegrees.x = rotOffsetDeg.x;
+                boneRotationDegrees.y = rotOffsetDeg.y;
+                boneRotationDegrees.z = rotOffsetDeg.z;
+                boneRotationControllers.push( boneFolder.add( boneRotationDegrees, 'x', -180, 180, 1 ).name( 'rot x (deg offset)' ).onChange( (v) => rotOffsetDeg.x = v ) );
+                boneRotationControllers.push( boneFolder.add( boneRotationDegrees, 'y', -180, 180, 1 ).name( 'rot y (deg offset)' ).onChange( (v) => rotOffsetDeg.y = v ) );
+                boneRotationControllers.push( boneFolder.add( boneRotationDegrees, 'z', -180, 180, 1 ).name( 'rot z (deg offset)' ).onChange( (v) => rotOffsetDeg.z = v ) );
+            }
+
+            boneDropdown.onChange( ( name ) => {
+                const bone = bones.find( b => b.name === name );
+                if ( bone ) selectBone( bone );
+            } );
+
+            // initial selection to a sensible default bone
+            if ( bones.length ) {
+                const initial = bones.find( b => /hips/i.test( b.name ) ) || bones[ 0 ];
+                boneGuiState.bone = initial.name;
+                boneDropdown.updateDisplay();
+                selectBone( initial );
+            }
+
+            // keep GUI rotations in sync while rotating via gizmo (reflect offsets)
+            transformControls.addEventListener( 'change', () => {
+                // sync selected bone rotation
+                if ( selectedBone ) {
+                    const rotOffset = boneRotationOffsetDegreesByName[ selectedBone.name ];
+                    if ( rotOffset ) {
+                        boneRotationDegrees.x = rotOffset.x;
+                        boneRotationDegrees.y = rotOffset.y;
+                        boneRotationDegrees.z = rotOffset.z;
+                    }
+                    boneRotationControllers.forEach( c => c.updateDisplay() );
+                }
+                // sync model rotation if the attached object is the model
+                if ( transformControls.object === targetModel ) {
+                    modelRotationDegrees.x = THREE.MathUtils.radToDeg( targetModel.rotation.x );
+                    modelRotationDegrees.y = THREE.MathUtils.radToDeg( targetModel.rotation.y );
+                    modelRotationDegrees.z = THREE.MathUtils.radToDeg( targetModel.rotation.z );
+                    modelRotControllers.forEach( c => c.updateDisplay() );
+                }
+            } );
+
+            const mesh = new THREE.Mesh( new THREE.PlaneGeometry( 2000, 2000 ), new THREE.MeshPhongMaterial( { color: 0x999999, depthWrite: false } ) );
+                mesh.rotation.x = - Math.PI / 2; 
+                mesh.position.y = -30;
+                mesh.receiveShadow = true;
+                scene.add( mesh );
+
+                const grid = new THREE.GridHelper( 2000, 20, 0x000000, 0x000000 );
+                grid.material.opacity = 0.2;
+                grid.position.y = -30;
+                grid.material.transparent = true;
+                scene.add( grid );
+
+
+            
+            // scene.add( floor );
+
+            // Extract animation data from BVH
+            function getSource( sourceModel ) {
+
+                const clip = sourceModel.clip;
+
+                const helper = new THREE.SkeletonHelper( sourceModel.skeleton.bones[ 0 ] );
+                const skeleton = new THREE.Skeleton( helper.bones );
+                // console.log('this is skeleton',skeleton);
+
+                const mixer = new THREE.AnimationMixer( sourceModel.skeleton.bones[ 0 ] );
+                mixer.clipAction( sourceModel.clip ).play();
+                // console.log(clip,skeleton,mixer)
+
+                return { clip, skeleton, mixer };
+
+            }
+
+            // Retarget animation from BVH to GLB
+            function retargetModel( sourceModel, targetModel ) {
+
+                const rotateCW45 = new THREE.Matrix4().makeRotationY( THREE.MathUtils.degToRad( 45 ) );
+                const rotateCW90 = new THREE.Matrix4().makeRotationZ( THREE.MathUtils.degToRad( 90 ) );
+                const rotateCCW90 = new THREE.Matrix4().makeRotationZ( THREE.MathUtils.degToRad( -90 ) );
+				const rotateCCW180 = new THREE.Matrix4().makeRotationZ( THREE.MathUtils.degToRad( - 180 ) );
+				const rotateCW180 = new THREE.Matrix4().makeRotationZ( THREE.MathUtils.degToRad( 180 ) );
+				const rotateFoot = new THREE.Matrix4().makeRotationFromEuler( new THREE.Euler( THREE.MathUtils.degToRad( -65 ), THREE.MathUtils.degToRad( 0 ), THREE.MathUtils.degToRad( 180 ) ) );
+                const rotateRightArm = new THREE.Matrix4().makeRotationFromEuler( new THREE.Euler( THREE.MathUtils.degToRad( 112 ), THREE.MathUtils.degToRad( -10 ), THREE.MathUtils.degToRad( 90 ) ) );
+                const rotateRightForeArm = new THREE.Matrix4().makeRotationFromEuler( new THREE.Euler( THREE.MathUtils.degToRad( 99 ), THREE.MathUtils.degToRad( -3 ), THREE.MathUtils.degToRad( 73 ) ) );
+                const rotateLeftArm = new THREE.Matrix4().makeRotationFromEuler( new THREE.Euler( THREE.MathUtils.degToRad( 104 ), THREE.MathUtils.degToRad( 20 ), THREE.MathUtils.degToRad( -73 ) ) );
+                const rotateLeftForeArm = new THREE.Matrix4().makeRotationFromEuler( new THREE.Euler( THREE.MathUtils.degToRad( 68 ), THREE.MathUtils.degToRad( -7 ), THREE.MathUtils.degToRad(  -82) ) );
+               const rotateLeftShoulder = new THREE.Matrix4().makeRotationFromEuler( new THREE.Euler( THREE.MathUtils.degToRad( 90 ), THREE.MathUtils.degToRad( -11 ), THREE.MathUtils.degToRad( -82) ) );
+               const rotateRightShoulder = new THREE.Matrix4().makeRotationFromEuler( new THREE.Euler( THREE.MathUtils.degToRad( 100 ), THREE.MathUtils.degToRad( -3 ), THREE.MathUtils.degToRad( 73) ) );
+               const rotateLeftHand = new THREE.Matrix4().makeRotationFromEuler( new THREE.Euler( THREE.MathUtils.degToRad( 0 ), THREE.MathUtils.degToRad( 0 ), THREE.MathUtils.degToRad( -90) ) );
+               const rotateRightHand = new THREE.Matrix4().makeRotationFromEuler( new THREE.Euler( THREE.MathUtils.degToRad( 0 ), THREE.MathUtils.degToRad( 0 ), THREE.MathUtils.degToRad( 90) ) );
+               // Find the first SkinnedMesh in the GLTF scene robustly
+                let targetSkin = null;
+                // targetModel.traverse( ( object ) => {
+                //     if ( object.isSkinnedMesh && !targetSkin ) {
+                //         targetSkin = object;
+                //     }
+                // } );
+
+                // if ( !targetSkin ) {
+                //     console.error( 'No SkinnedMesh found in target GLB. Scene graph:', targetModel.scene );
+                //     throw new Error( 'SkinnedMesh not found in target model' );
+                // }
+                targetSkin = targetModel.children[1]
+                const name_bone= []
+                const retargetOptions = {
+
+                    // Hip bone from BVH
+                    hip: 'Hips',
+
+                    // Preserve scale
+                    scale: 100, // BVH usually doesn't require scaling
+                    
+                    // Map bones
+                    getBoneName: function ( bone ) {
+                        // console.log(bone.name)
+                        // name_bone.push(bone.name)
+                        return bone.name.replace(/^mixamorig/, '');
+                    },
+                    // flipAxes: ["y"],
+                    localOffsets:{
+						'mixamorigLeftUpLeg': rotateCW180,
+						'mixamorigRightUpLeg': rotateCW180,
+                        'mixamorigLeftLeg': rotateCW180,
+                        'mixamorigRightLeg': rotateCW180,
+                        'mixamorigLeftFoot': rotateFoot,
+                        'mixamorigRightFoot': rotateFoot,
+                        'mixamorigRightShoulder': rotateRightShoulder,
+                        'mixamorigLeftShoulder': rotateLeftShoulder,
+                        'mixamorigRightArm': rotateRightArm,
+                        'mixamorigLeftArm': rotateLeftArm,
+                        'mixamorigRightForeArm': rotateRightForeArm,
+                        'mixamorigLeftForeArm': rotateLeftForeArm,
+                        'mixamorigLeftHand': rotateLeftHand,
+                        'mixamorigRightHand': rotateRightHand,
+                    },
+
+
+                };
+                // console.log(re)
+
+                const retargetedClip = SkeletonUtils.retargetClip( targetSkin, sourceModel.skeleton, sourceModel.clip, retargetOptions );
+                console.log('retargetedclip',retargetedClip)
+                const mixer = new THREE.AnimationMixer( targetSkin );
+                mixer.clipAction( retargetedClip ).play();
+
+                return mixer;
+
+            }
+
+            // Handle window resize
+            window.onresize = function () {
+
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+
+                renderer.setSize( window.innerWidth, window.innerHeight );
+
+            };
+
+            // Animation loop
+            function animate() {
+
+                const delta = clock.getDelta();
+
+                source.mixer.update( delta );
+                mixer.update( delta );
+
+                // Apply persistent bone offsets AFTER animation updates so user edits stick
+                if ( Array.isArray( bones ) && bones.length ) {
+                    const tmpEuler = new THREE.Euler();
+                    const tmpQuat = new THREE.Quaternion();
+                    for ( let i = 0; i < bones.length; i ++ ) {
+                        const bone = bones[ i ];
+                        const posOffset = bonePositionOffsetByName[ bone.name ];
+                        const rotOffsetDeg = boneRotationOffsetDegreesByName[ bone.name ];
+                        if ( posOffset ) {
+                            bone.position.x += posOffset.x;
+                            bone.position.y += posOffset.y;
+                            bone.position.z += posOffset.z;
+                        }
+                        if ( rotOffsetDeg ) {
+                            tmpEuler.set(
+                                THREE.MathUtils.degToRad( rotOffsetDeg.x ),
+                                THREE.MathUtils.degToRad( rotOffsetDeg.y ),
+                                THREE.MathUtils.degToRad( rotOffsetDeg.z ),
+                                'XYZ'
+                            );
+                            tmpQuat.setFromEuler( tmpEuler );
+                            bone.quaternion.multiply( tmpQuat );
+                        }
+                    }
+                }
+
+                controls.update();
+
+                stats.update();
+
+                renderer.render( scene, camera );
+
+            }
+
+        </script>
+    </body>
+</html>
+
+
+
+
+
+
+ 
